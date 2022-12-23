@@ -17,6 +17,8 @@ on:
         options:
           - jammy
           - bullseye
+          - focal
+          - buster
       armbian_board:
         description: "Select Box Board."
         required: false
