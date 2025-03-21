@@ -183,7 +183,7 @@ on:
           - main
           - v25.02
           - v24.11
-          - v24.08
+          - v24.08.01
       armbian_kernel:
         description: "Select kernel version."
         required: false
