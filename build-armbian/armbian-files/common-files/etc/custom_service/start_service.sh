@@ -16,12 +16,14 @@
 #
 #========================================================================================
 
+set +e
+
 # Custom Service Log - all script output will be logged here
 custom_log="/tmp/ophub_start_service.log"
 
 # A helper function for logging with a timestamp
 log_message() {
-    echo "[$(date +"%Y.%m.%d.%H:%M:%S")] $1" >>"${custom_log}"
+    echo "[$(date +"%Y.%m.%d.%H:%M:%S")] $1" >>"${custom_log}" 2>/dev/null || true
 }
 
 # Start of the script
@@ -34,8 +36,13 @@ log_message "Kernel console logging level set to 1 (Panic only)."
 # System Identification
 # Set the release check file to identify the device type
 ophub_release_file="/etc/ophub-release"
-[[ -f "${ophub_release_file}" ]] && source "${ophub_release_file}" 2>/dev/null || true
-FDTFILE="${FDTFILE:-no_found.dtb}"
+FDTFILE="no_found.dtb"
+[[ -f "${ophub_release_file}" ]] && {
+    # ophub-release stores values like: FDTFILE='xxx.dtb'
+    _fdt="$(grep -E '^FDTFILE=' "${ophub_release_file}" 2>/dev/null | head -n1 | cut -d"'" -f2)"
+    [[ -n "${_fdt}" ]] && FDTFILE="${_fdt}"
+    unset _fdt
+}
 log_message "Detected FDT file: ${FDTFILE}"
 
 # Device-Specific Services
@@ -121,6 +128,7 @@ fi
 # Enable UDP GRO forwarding on all physical ethernet interfaces
 # View command: ethtool -k eth0 | grep -i udp
 if command -v ethtool >/dev/null 2>&1; then
+    shopt -s nullglob
     for iface in /sys/class/net/*/device; do
         iface_name="$(basename "${iface%/device}")"
         # Skip non-ethernet interfaces (type != 1) and wireless interfaces
@@ -129,6 +137,7 @@ if command -v ethtool >/dev/null 2>&1; then
         ethtool -K "${iface_name}" rx-udp-gro-forwarding on >/dev/null 2>&1
         log_message "Enabled rx-udp-gro-forwarding on ${iface_name}."
     done
+    shopt -u nullglob
 fi
 
 # Led display control, Only for Amlogic devices (meson-*) with valid boxid.
@@ -183,3 +192,4 @@ todo_rootfs_resize="/root/.no_rootfs_resize"
 
 # Finalization
 log_message "All custom services have been processed successfully."
+exit 0
