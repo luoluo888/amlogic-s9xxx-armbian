@@ -16,7 +16,10 @@
 #
 #========================================================================================
 
-set +e
+set +euo pipefail
+
+trap 'exit 0' EXIT
+trap '' HUP INT QUIT TERM PIPE
 
 # Custom Service Log - all script output will be logged here
 custom_log="/tmp/ophub_start_service.log"
@@ -33,17 +36,22 @@ log_message "Starting custom services..."
 dmesg -n 1 >/dev/null 2>&1 || true
 log_message "Kernel console logging level set to 1 (Panic only)."
 
-# System Identification
-# Set the release check file to identify the device type
+# Search for the FDTFILE file (only the basename of the .dtb is needed)
 ophub_release_file="/etc/ophub-release"
-FDTFILE="no_found.dtb"
-[[ -f "${ophub_release_file}" ]] && {
-    # ophub-release stores values like: FDTFILE='xxx.dtb'
-    _fdt="$(grep -E '^FDTFILE=' "${ophub_release_file}" 2>/dev/null | head -n1 | cut -d"'" -f2)"
-    [[ -n "${_fdt}" ]] && FDTFILE="${_fdt}"
-    unset _fdt
-}
-log_message "Detected FDT file: ${FDTFILE}"
+FDTFILE=""
+# 1) /etc/ophub-release : FDTFILE='xxx.dtb'
+[[ -f "${ophub_release_file}" ]] &&
+    FDTFILE="$(awk -F"'" '/^FDTFILE=/ {print $2; exit}' "${ophub_release_file}" 2>/dev/null)"
+# 2) /boot/uEnv.txt : FDT=/dtb/.../xxx.dtb  (or FDT=xxx.dtb)
+[[ -z "${FDTFILE}" && -f "/boot/uEnv.txt" ]] &&
+    FDTFILE="$(grep -E '^FDT=.*\.dtb$' /boot/uEnv.txt 2>/dev/null | head -n1 | sed -E 's#^FDT=##; s#.*/##')"
+# 3) /boot/extlinux/extlinux.conf : "    fdt /dtb/.../xxx.dtb"
+[[ -z "${FDTFILE}" && -f "/boot/extlinux/extlinux.conf" ]] &&
+    FDTFILE="$(grep -Eo '/dtb/[^[:space:]]+\.dtb' /boot/extlinux/extlinux.conf 2>/dev/null | head -n1 | sed -E 's#.*/##')"
+# 4) /boot/armbianEnv.txt : fdtfile=vendor/xxx.dtb  (or fdtfile=xxx.dtb)
+[[ -z "${FDTFILE}" && -f "/boot/armbianEnv.txt" ]] &&
+    FDTFILE="$(grep -E '^fdtfile=.*\.dtb$' /boot/armbianEnv.txt 2>/dev/null | head -n1 | sed -E 's#^fdtfile=##; s#.*/##')"
+log_message "Detected FDT file: ${FDTFILE:-not found}"
 
 # Device-Specific Services
 
